@@ -1,0 +1,28 @@
+kind = "web"
+previewPath = "/"
+title = "Subly Abo-Manager"
+description = "A Swiss subscription cockpit for tracking recurring contracts, renewal deadlines, unused subscriptions, savings opportunities, and cancellation workflows in CHF."
+version = "1.0.0"
+id = "artifacts/subly"
+router = "path"
+
+[[services]]
+name = "web"
+paths = [ "/" ]
+localPort = 18637
+
+[services.development]
+run = "pnpm --filter @workspace/subly run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/subly", "run", "build" ]
+serve = "static"
+publicDir = "artifacts/subly/dist/public"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "18637"
+BASE_PATH = "/"
