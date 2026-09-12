@@ -47,3 +47,18 @@ Thumbs.db
 # Replit
 .cache/
 .local/
+
+# Environment & Secrets
+.env
+*.env
+!.env.example
+
+# Local SQLite databases & logs
+data/
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm
+*.db
+*.db-wal
+*.db-shm
+scripts/hermes_overnight.log

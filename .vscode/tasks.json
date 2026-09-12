@@ -1,0 +1,12 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Subly starten",
+      "type": "shell",
+      "command": "pnpm --filter @workspace/subly run dev",
+      "isBackground": true,
+      "problemMatcher": []
+    }
+  ]
+}

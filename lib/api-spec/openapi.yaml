@@ -3,20 +3,21 @@ info:
   # Do not change the title, if the title changes, the import paths will be broken
   title: Api
   version: 0.1.0
-  description: API specification
+  description: Subly subscription management API
 servers:
   - url: /api
     description: Base API path
 tags:
   - name: health
     description: Health operations
+  - name: subscriptions
+    description: Authenticated subscription ledger operations
 paths:
   /healthz:
     get:
       operationId: healthCheck
       tags: [health]
       summary: Health check
-      description: Returns server health status
       responses:
         "200":
           description: Healthy
@@ -24,13 +25,254 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+  /subscriptions:
+    get:
+      operationId: listSubscriptions
+      tags: [subscriptions]
+      summary: List the signed-in user's subscriptions
+      responses:
+        "200":
+          description: User subscriptions
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Subscription"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+    post:
+      operationId: createSubscription
+      tags: [subscriptions]
+      summary: Create a subscription for the signed-in user
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SubscriptionInput"
+      responses:
+        "201":
+          description: Created subscription
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Subscription"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+  /subscriptions/{id}:
+    patch:
+      operationId: updateSubscription
+      tags: [subscriptions]
+      summary: Update one of the signed-in user's subscriptions
+      parameters:
+        - $ref: "#/components/parameters/SubscriptionId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SubscriptionUpdate"
+      responses:
+        "200":
+          description: Updated subscription
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Subscription"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    delete:
+      operationId: deleteSubscription
+      tags: [subscriptions]
+      summary: Delete one of the signed-in user's subscriptions
+      parameters:
+        - $ref: "#/components/parameters/SubscriptionId"
+      responses:
+        "204":
+          description: Deleted
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /subscriptions/{id}/used:
+    post:
+      operationId: markSubscriptionUsed
+      tags: [subscriptions]
+      summary: Mark a subscription as used today
+      parameters:
+        - $ref: "#/components/parameters/SubscriptionId"
+      responses:
+        "200":
+          description: Updated subscription
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Subscription"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
 components:
+  parameters:
+    SubscriptionId:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: integer
+        minimum: 1
+  responses:
+    BadRequest:
+      description: Invalid request
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    Unauthorized:
+      description: Authentication required
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
   schemas:
     HealthStatus:
       type: object
       properties:
         status:
           type: string
+      required: [status]
+    Error:
+      type: object
+      properties:
+        error:
+          type: string
+      required: [error]
+    Subscription:
+      type: object
       required:
+        - id
+        - provider
+        - plan
+        - category
+        - amount
+        - billingCycle
+        - nextRenewal
+        - noticeDays
+        - lastUsed
         - status
-
+        - contractNumber
+        - color
+        - logoText
+        - cancellationAddress
+        - hotline
+      properties:
+        id:
+          type: integer
+        provider:
+          type: string
+        plan:
+          type: string
+        category:
+          type: string
+        amount:
+          type: number
+          minimum: 0
+        billingCycle:
+          type: string
+          enum: [monthly, quarterly, half-yearly, yearly]
+        nextRenewal:
+          type: string
+          format: date
+        noticeDays:
+          type: integer
+          minimum: 0
+        lastUsed:
+          type: string
+          format: date
+        status:
+          type: string
+          enum: [active, cancelled]
+        contractNumber:
+          type: string
+        color:
+          type: string
+        logoText:
+          type: string
+        cancellationAddress:
+          type: string
+        hotline:
+          type: string
+        priceChange:
+          type: ["number", "null"]
+    SubscriptionInput:
+      type: object
+      required:
+        - provider
+        - plan
+        - category
+        - amount
+        - billingCycle
+        - nextRenewal
+        - noticeDays
+        - lastUsed
+        - status
+        - contractNumber
+        - color
+        - logoText
+        - cancellationAddress
+        - hotline
+      properties:
+        provider: { type: string, minLength: 1 }
+        plan: { type: string }
+        category: { type: string }
+        amount: { type: number, minimum: 0 }
+        billingCycle:
+          type: string
+          enum: [monthly, quarterly, half-yearly, yearly]
+        nextRenewal: { type: string, format: date }
+        noticeDays: { type: integer, minimum: 0 }
+        lastUsed: { type: string, format: date }
+        status:
+          type: string
+          enum: [active, cancelled]
+        contractNumber: { type: string }
+        color: { type: string }
+        logoText: { type: string }
+        cancellationAddress: { type: string }
+        hotline: { type: string }
+        priceChange: { type: ["number", "null"] }
+    SubscriptionUpdate:
+      type: object
+      properties:
+        provider: { type: string, minLength: 1 }
+        plan: { type: string }
+        category: { type: string }
+        amount: { type: number, minimum: 0 }
+        billingCycle:
+          type: string
+          enum: [monthly, quarterly, half-yearly, yearly]
+        nextRenewal: { type: string, format: date }
+        noticeDays: { type: integer, minimum: 0 }
+        lastUsed: { type: string, format: date }
+        status:
+          type: string
+          enum: [active, cancelled]
+        contractNumber: { type: string }
+        color: { type: string }
+        logoText: { type: string }
+        cancellationAddress: { type: string }
+        hotline: { type: string }
+        priceChange: { type: ["number", "null"] }

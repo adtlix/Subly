@@ -5,33 +5,42 @@ import { defineConfig } from 'vite';
 
 import runtimeErrorOverlay from '@replit/vite-plugin-runtime-error-modal';
 
-const rawPort = process.env.PORT;
-
-if (!rawPort) {
-  throw new Error(
-    'PORT environment variable is required but was not provided.',
-  );
-}
-
+const rawPort = process.env.PORT || '3000';
 const port = Number(rawPort);
 
 if (Number.isNaN(port) || port <= 0) {
   throw new Error(`Invalid PORT value: "${rawPort}"`);
 }
 
-const basePath = process.env.BASE_PATH;
+const basePath = process.env.BASE_PATH || '/';
 
-if (!basePath) {
-  throw new Error(
-    'BASE_PATH environment variable is required but was not provided.',
-  );
+function sublyApiPlugin() {
+  return {
+    name: 'subly-api-middleware',
+    async configureServer(server: any) {
+      try {
+        const { default: app } = await import('../api-server/dist/app.mjs');
+        server.middlewares.use((req: any, res: any, next: any) => {
+          // Only pass /api and /healthz requests to express backend so Vite handles all frontend routes & assets
+          if (req.url && (req.url.startsWith('/api') || req.url.startsWith('/healthz'))) {
+            return app(req, res, next);
+          }
+          next();
+        });
+        console.log('[subly] ✅ Cloud API mounted in-process into Vite dev server');
+      } catch (err) {
+        console.error('[subly] ❌ Failed to mount api-server in Vite:', err);
+      }
+    },
+  };
 }
 
 export default defineConfig({
   base: basePath,
   plugins: [
+    sublyApiPlugin(),
     react(),
-    tailwindcss(),
+    tailwindcss({ optimize: false }),
     runtimeErrorOverlay(),
     ...(process.env.NODE_ENV !== 'production' &&
     process.env.REPL_ID !== undefined
