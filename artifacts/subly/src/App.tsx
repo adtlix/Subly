@@ -2045,19 +2045,7 @@ function ScanModal({ onClose, onAdd, toast, currency = "CHF" }: { onClose: () =>
   const [isDragging, setIsDragging] = useState(false);
   const [extractionEvidence, setExtractionEvidence] = useState<{ field: string; value: string | number; rawSnippet: string }[]>([]);
   const [extractionConfidence, setExtractionConfidence] = useState<"verified" | "estimated" | "manual_review_required">("verified");
-
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
-    };
-    window.addEventListener("keydown", handleKeyDown);
-    const origOverflow = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    return () => {
-      window.removeEventListener("keydown", handleKeyDown);
-      document.body.style.overflow = origOverflow;
-    };
-  }, [onClose]);
+  const [extractionSummary, setExtractionSummary] = useState<string>("");
 
   const [formData, setFormData] = useState<Subscription>(() => extractSubscriptionFromInvoice("Swisscom_blueMobile.pdf"));
 
@@ -2072,8 +2060,13 @@ function ScanModal({ onClose, onAdd, toast, currency = "CHF" }: { onClose: () =>
       amount: number | null;
       currency?: string;
       category: string;
+      billingCycle?: BillingCycle;
       contractNumber?: string;
       renewalDate?: string;
+      noticeDays?: number;
+      hotline?: string;
+      cancellationAddress?: string;
+      summary?: string;
       evidence?: { field: string; value: string | number; rawSnippet: string }[];
       extractionConfidence?: "verified" | "estimated" | "manual_review_required";
     }
@@ -2081,6 +2074,7 @@ function ScanModal({ onClose, onAdd, toast, currency = "CHF" }: { onClose: () =>
     setActiveFile(fileInfo);
     setExtractionEvidence(result.evidence || []);
     setExtractionConfidence(result.extractionConfidence || "estimated");
+    setExtractionSummary(result.summary || "");
 
     setFormData({
       id: 0,
@@ -2088,16 +2082,16 @@ function ScanModal({ onClose, onAdd, toast, currency = "CHF" }: { onClose: () =>
       plan: result.plan || "Standard",
       category: result.category || "Sonstiges",
       amount: result.amount !== null && result.amount !== undefined ? result.amount : 0,
-      billingCycle: "monthly",
+      billingCycle: result.billingCycle || "monthly",
       nextRenewal: result.renewalDate || dateAt(45),
-      noticeDays: 30,
+      noticeDays: result.noticeDays || 30,
       lastUsed: dateAt(0),
       status: "active",
       contractNumber: result.contractNumber || "",
       logoText: (result.provider || "AB").slice(0, 2).toUpperCase(),
       color: "#182d3b",
-      cancellationAddress: "",
-      hotline: "",
+      cancellationAddress: result.cancellationAddress || "",
+      hotline: result.hotline || "",
     });
 
     setScanState("reviewed");
@@ -2112,6 +2106,8 @@ function ScanModal({ onClose, onAdd, toast, currency = "CHF" }: { onClose: () =>
     const fileInfo = { name: file.name, size: sizeStr, previewUrl };
 
     setActiveFile(fileInfo);
+    setScanState("scanning");
+
     if (file.size > 30 * 1024 * 1024) {
       toast?.("Datei ist zu gross (maximal 30 MB)");
       setScanState("idle");
@@ -2158,6 +2154,28 @@ function ScanModal({ onClose, onAdd, toast, currency = "CHF" }: { onClose: () =>
       });
     }
   };
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    const handlePaste = (e: ClipboardEvent) => {
+      if (e.clipboardData?.files && e.clipboardData.files.length > 0) {
+        e.preventDefault();
+        handleFile(e.clipboardData.files[0]);
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    window.addEventListener("paste", handlePaste);
+    const origOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+      window.removeEventListener("paste", handlePaste);
+      document.body.style.overflow = origOverflow;
+    };
+  }, [onClose]);
 
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault();
@@ -2370,14 +2388,18 @@ function ScanModal({ onClose, onAdd, toast, currency = "CHF" }: { onClose: () =>
             )}
 
             {/* Checklist */}
-            <div className="mx-auto mt-6 max-w-[320px] space-y-2.5 text-left text-xs">
+            <div className="mx-auto mt-6 max-w-[340px] space-y-2.5 text-left text-xs">
               <div className="flex items-center gap-2.5 text-emerald-700">
                 <CheckCircle2 size={16} className="shrink-0 text-[#059669]" />
-                <span>Dokument wird eingelesen & Stream dekodiert</span>
+                <span>Dokument wird eingelesen & vorbereitet</span>
               </div>
               <div className="flex items-center gap-2.5 text-emerald-700">
                 <Loader2 size={16} className="shrink-0 animate-spin text-[#059669]" />
-                <span>Text-Extraktion & Schweizer Betragsanalyse (CHF/EUR)</span>
+                <span>Multimodale KI-Vision & Schweizer QR-Bill-Erkennung aktiv</span>
+              </div>
+              <div className="flex items-center gap-2.5 text-slate-500">
+                <Sparkles size={16} className="shrink-0 text-amber-500" />
+                <span>Tarife, Betrag, Fristen & Kündigungsadresse werden extrahiert</span>
               </div>
             </div>
           </div>
@@ -2386,6 +2408,14 @@ function ScanModal({ onClose, onAdd, toast, currency = "CHF" }: { onClose: () =>
         {/* State 3: REVIEW & EDIT */}
         {scanState === "reviewed" && (
           <div className="mt-5 space-y-5">
+            {/* Summary Banner if provided */}
+            {extractionSummary && (
+              <div className="rounded-xl bg-emerald-500/10 border border-emerald-500/25 px-3.5 py-2.5 text-xs text-emerald-950 font-medium flex items-start gap-2.5 shadow-2xs">
+                <Sparkles size={16} className="text-[#059669] shrink-0 mt-0.5" />
+                <span className="leading-relaxed">{extractionSummary}</span>
+              </div>
+            )}
+
             {/* Top Status Banner */}
             <div className={`flex flex-col gap-2 rounded-xl p-3.5 text-xs border ${
               extractionConfidence === "verified"
@@ -2399,7 +2429,7 @@ function ScanModal({ onClose, onAdd, toast, currency = "CHF" }: { onClose: () =>
                   {extractionConfidence === "verified" ? (
                     <>
                       <CheckCircle2 size={16} className="text-[#059669]" />
-                      <span>Rechnungsdaten erkannt (Verifiziert)</span>
+                      <span>KI-Rechnungsdaten erkannt (Verifiziert)</span>
                     </>
                   ) : extractionConfidence === "estimated" ? (
                     <>

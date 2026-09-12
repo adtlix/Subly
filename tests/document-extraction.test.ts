@@ -83,3 +83,50 @@ test("Document Extractor: safe filename sanitization prevents path traversal", (
   assert.equal(result.amount, 79.0);
   assert.equal(result.currency, "CHF");
 });
+
+test("Document Extractor: parses Swiss QR-Bill structured fields", () => {
+  const qrBillSample = `
+    SPC
+    0200
+    1
+    CH4408480000010156789
+    S
+    Sunrise GmbH
+    Thurgauerstrasse 101B
+    8152 Glattpark
+    CH
+    
+    
+    129.90
+    CHF
+    210000000003139471430009017
+    Sunrise Up Internet & Mobile
+  `;
+
+  const result = parseInvoiceText(qrBillSample);
+  assert.equal(result.provider, "Sunrise");
+  assert.equal(result.amount, 129.90);
+  assert.equal(result.currency, "CHF");
+  assert.equal(result.extractionConfidence, "verified");
+  assert.ok(result.contractNumber?.includes("210000000003139471430009017"));
+});
+
+test("Document Extractor: handles Swiss thousand separator (CHF 1'250.00) and notice period", () => {
+  const yearlySample = `
+    Swica Gesundheitsorganisation
+    Jahresprämie 2026: CHF 1'250.00
+    Kündigungsfrist: 3 Monate zum Jahresende
+    Zahlungsintervall: Jährlich
+    Vertrags-Nr: SW-8849201
+  `;
+
+  const result = parseInvoiceText(yearlySample);
+  assert.equal(result.provider, "Swica");
+  assert.equal(result.category, "Health");
+  assert.equal(result.amount, 1250.00);
+  assert.equal(result.currency, "CHF");
+  assert.equal(result.billingCycle, "yearly");
+  assert.equal(result.noticeDays, 90);
+  assert.equal(result.contractNumber, "SW-8849201");
+  assert.equal(result.extractionConfidence, "verified");
+});
