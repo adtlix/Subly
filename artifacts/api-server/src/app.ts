@@ -38,6 +38,10 @@ function loadEnvFile() {
 }
 loadEnvFile();
 
+if (!process.env.NODE_ENV) {
+  process.env.NODE_ENV = "production";
+}
+
 const app: Express = express();
 
 const isProduction = process.env.NODE_ENV === "production";
@@ -52,14 +56,14 @@ app.use((_req, res, next) => {
     res.setHeader("Strict-Transport-Security", "max-age=31536000; includeSubDomains");
   }
 
-  // Real, strict Content Security Policy (CSP)
+  // Safe Content Security Policy (CSP) allowing Render domains, self, fonts and Clerk
   const cspDirectives = [
     "default-src 'self'",
-    "script-src 'self' https://*.clerk.accounts.dev https://*.clerk.com",
+    "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://*.clerk.accounts.dev https://*.clerk.com",
     "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
     "font-src 'self' https://fonts.gstatic.com data:",
     "img-src 'self' data: blob: https:",
-    "connect-src 'self' https://*.clerk.accounts.dev https://*.clerk.com",
+    "connect-src 'self' https://*.clerk.accounts.dev https://*.clerk.com https://*.onrender.com https://*.render.com wss: ws:",
     "frame-ancestors 'none'",
     "base-uri 'self'",
     "form-action 'self'",
@@ -90,22 +94,23 @@ app.use(
 
 app.use(CLERK_PROXY_PATH, clerkProxyMiddleware());
 
-// CORS configuration with explicit origin allowlist
+// CORS configuration with explicit origin allowlist + Render support
 const defaultProdOrigins = ["https://subly.ch", "https://www.subly.ch"];
 const configuredOrigins = (process.env.CORS_ORIGINS || "")
   .split(",")
   .map(s => s.trim())
   .filter(Boolean);
 
-const allowedOrigins = isProduction
-  ? (configuredOrigins.length > 0 ? configuredOrigins : defaultProdOrigins)
-  : [
-      "http://localhost:5173",
-      "http://localhost:3000",
-      "http://127.0.0.1:5173",
-      "http://127.0.0.1:3000",
-      ...configuredOrigins,
-    ];
+const allowedOrigins = [
+  ...defaultProdOrigins,
+  ...configuredOrigins,
+  "http://localhost:5173",
+  "http://localhost:3000",
+  "http://localhost:5000",
+  "http://127.0.0.1:5173",
+  "http://127.0.0.1:3000",
+  "http://127.0.0.1:5000",
+];
 
 app.use(
   cors({
@@ -114,7 +119,12 @@ app.use(
       if (!origin) {
         return callback(null, true);
       }
-      if (allowedOrigins.includes(origin)) {
+      if (
+        allowedOrigins.includes(origin) ||
+        origin.endsWith(".onrender.com") ||
+        origin.endsWith(".render.com") ||
+        (process.env.RENDER_EXTERNAL_URL && origin === process.env.RENDER_EXTERNAL_URL)
+      ) {
         return callback(null, true);
       }
       // In development only, allow any localhost/127.0.0.1 port
@@ -194,34 +204,50 @@ try {
   cleanupTimer.unref();
 } catch (_) {}
 
-// In production (standalone backend deployment), serve the built static frontend files.
-// In development, Vite serves the frontend and handles routing itself.
-if (process.env.NODE_ENV === "production") {
-  const candidateStaticDirs = [
-    path.resolve(__dirname, "../../subly/dist/public"),
-    path.resolve(process.cwd(), "artifacts/subly/dist/public"),
-    path.resolve(process.cwd(), "dist/public"),
-  ];
+// Serve built static frontend files (always active if build directory exists)
+const candidateStaticDirs = [
+  path.resolve(__dirname, "../../subly/dist/public"),
+  path.resolve(__dirname, "../subly/dist/public"),
+  path.resolve(process.cwd(), "artifacts/subly/dist/public"),
+  path.resolve(process.cwd(), "dist/public"),
+  path.resolve(process.cwd(), "public"),
+];
 
-  for (const staticDir of candidateStaticDirs) {
-    if (fs.existsSync(staticDir)) {
-      app.use(express.static(staticDir));
-      app.use((req, res, next) => {
-        if (req.path.startsWith("/api") || (req.path.includes(".") && !req.path.endsWith(".html"))) {
-          return next();
-        }
-        const indexPath = path.join(staticDir, "index.html");
-        if (fs.existsSync(indexPath)) {
-          res.sendFile(indexPath, (err) => {
-            if (err) next();
-          });
-        } else {
-          next();
-        }
+let staticMounted = false;
+for (const staticDir of candidateStaticDirs) {
+  if (fs.existsSync(staticDir) && fs.existsSync(path.join(staticDir, "index.html"))) {
+    logger.info({ staticDir }, "Serving static frontend files");
+    app.use(express.static(staticDir));
+    app.use((req, res, next) => {
+      // Don't intercept non-GET requests or API routes or missing asset files (e.g. .png, .js)
+      if (req.method !== "GET" && req.method !== "HEAD") {
+        return next();
+      }
+      if (req.path.startsWith("/api") || (req.path.includes(".") && !req.path.endsWith(".html"))) {
+        return next();
+      }
+      const indexPath = path.join(staticDir, "index.html");
+      res.sendFile(indexPath, (err) => {
+        if (err) next();
       });
-      break;
-    }
+    });
+    staticMounted = true;
+    break;
   }
+}
+
+if (!staticMounted) {
+  logger.warn({ candidateStaticDirs }, "No static frontend directory found with index.html");
+  app.get("/", (_req, res) => {
+    res.type("html").send(`<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><title>Subly Cloud</title></head>
+<body style="font-family:sans-serif;padding:40px;text-align:center;background:#fbfaf6;color:#182d3b">
+  <h1>Subly Cloud Backend ist online</h1>
+  <p>Das Backend läuft einwandfrei. Frontend-Dateien werden noch bereitgestellt.</p>
+</body>
+</html>`);
+  });
 }
 
 export default app;

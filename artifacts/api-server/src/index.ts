@@ -1,3 +1,7 @@
+if (!process.env.NODE_ENV) {
+  process.env.NODE_ENV = "production";
+}
+
 import app from "./app";
 import { logger } from "./lib/logger";
 
